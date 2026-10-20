@@ -52,6 +52,16 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 | Q19 | The dataset's Read me says pictures came from Google image results. Is internal use inside Avanceon diagrams confirmed? | Client |
 | Q20 | Held-out set for evaluation: Murtiba. KSU was studied in detail during the spike, so it is no longer a clean hold-out. Rules must not be written from Murtiba. | Me |
 
+## Raised by Phase 4 (spec and validator)
+
+| # | Question | Why it matters | Default until answered | Owner |
+|---|---|---|---|---|
+| Q44 | **Aliases to confirm.** Because a component needs an exact match (D32), almost every BOQ item is a box: of Korangi's 17 headings only "Flame Detectors" matches. A person confirming an alias (for example "Work Stations" = "Client / operator workstation") turns a box into a dataset item with the dataset's label. The match reports list look-alike suggestions. | How many items use dataset labels and pictures. | No aliases; boxes with BOQ wording. | Client or user |
+| Q45 | **Quantity mode per diagram.** F&G drawings are one item per type with no count; SCADA drawings number or count items. The spec chooses `instances`, `count` or `type`; the default is `instances` (capped at 12). Who decides, and is there a rule by diagram kind? | 88 flame detectors cannot be 88 boxes. | The model picks from the prompt and says so; `type` for field devices. | Client |
+| Q46 | **Numbered labels from a plural heading.** In `instances` mode a box labelled "Work Stations" becomes "Work Stations-01", "-02". The approved drawings say "Work Station 1". No singular form exists in the BOQ or dataset. | Spelling. | Use `type` mode or an alias to a singular dataset label. | Client |
+| Q47 | **Show assumed connections differently?** Today assumed links are drawn like stated ones and listed in the notes. | Honesty of the drawing. | Notes only. | Client |
+| Q48 | **Rules the validator enforces beyond the client's text.** Adjacent levels only, the DMZ firewall, and hardwired only at levels 0 to 1 (a warning) come from the Purdue model and the samples, not from a client document. | They can reject a spec the client would accept. | As in `data/spec_rules.json`, marked provisional. | Client |
+
 ## Platform: ChatGPT (changed 2026-10-20)
 
 | # | Question | Why it matters | Default until answered | Owner |

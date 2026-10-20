@@ -6,8 +6,11 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 
 | # | Question | Why it matters | Default until answered | Owner | Status |
 |---|---|---|---|---|---|
-| Q1 | Instruction file (do and don't rules) | Holds rules we must not invent: when a BOQ category is drawn or skipped, allowed connections, naming. | Placeholder file with the structure only. | Client | Requested, not received |
-| Q2 | Cable colour standard (which colour and dash style for each cable type) | Legend and cables read from the cable table. | Ethernet `#0070C0` solid, fibre `#00B050`, as on the Maaden and KSU drawings. | Client | Requested, not received |
+| Q1 | Instruction file (do and don't rules) | Holds rules we must not invent: when a BOQ category is drawn or skipped, allowed connections, naming. | Provisional file in `skills/arch/instructions.md`. | Client | A short style sheet (cable colours and four drawing rules) arrived 2026-10-20; the do and don't rules did not |
+| Q2 | Cable colour standard | Legend and cables read from the cable table. | **Answered** (D22). Still open: dash style (none given, so solid) and the legend wording (we use the client's connection-type names). | Client | Mostly answered |
+| Q29 | **DMZ (Level 3.5) rules.** The instructions say "represented with boxes when needed" and mention an attached example architecture for L3.5. That example was not in the document or the folder. When is a DMZ needed? What boxes does it hold? Which connections must cross it? | Purdue validation and the DMZ layout. | Draw no DMZ unless the prompt or BOQ asks for one. | Client |
+| Q30 | **VM contents.** "Whenever there is a VM, what is inside it is mentioned in a text box or on the side, as in the example." How does the BOQ say a server is a VM and what is inside it? | Needs the example architecture. | Not drawn until the example arrives. | Client |
+| Q31 | **Rules removed from the first version.** An earlier draft told us to show DIN-rail or rack-mount switches, a patch panel in the networking layer, generic gateways, servers, firewalls, SCADA switches, and had an unclear "PLT" process item. The second version drops them. Are they gone, or just not restated? | Decides switch and gateway handling. | Draw whatever the BOQ and dataset give; unmatched items become boxes (D18). | Client |
 
 ## Decisions we need
 

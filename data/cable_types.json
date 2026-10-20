@@ -1,9 +1,11 @@
 {
-  "_note": "Cable types: label, colour, dash style. PLACEHOLDER values (Ethernet blue, fibre green, hardwire black as on the Maaden, KSU and Murtiba legends) until the client's cable colour standard arrives (open question Q2). pattern: 1 = solid, 2 = dashed.",
-  "status": "placeholder",
+  "_note": "Cable types from the client's 'System Architecture Drawing Instructions.docx' (section 1). Field-PLC control signals are always hardwired, so both rows of the client's table (both black) are one type here. The document gives no dash style, so every type is solid (pattern 1). Legend wording is the client's 'Connection type' column plus its note for Ethernet; confirm. pattern: 1 = solid, 2 = dashed.",
+  "status": "client",
   "cables": [
-    {"id": "ethernet", "label": "Ethernet Cable",      "color": "#0070C0", "pattern": 1},
-    {"id": "fiber",    "label": "Fiber Optical Cable", "color": "#00B050", "pattern": 1},
-    {"id": "hardwire", "label": "Hardwire",            "color": "#000000", "pattern": 1}
+    {"id": "ethernet", "label": "Ethernet (Cu)", "color": "#0000FF", "pattern": 1},
+    {"id": "fibre",    "label": "Fibre",         "color": "#FF0000", "pattern": 1},
+    {"id": "modbus",   "label": "Modbus",        "color": "#00B000", "pattern": 1},
+    {"id": "bacnet",   "label": "BACnet",        "color": "#7030A0", "pattern": 1},
+    {"id": "hardwired","label": "Hardwired",     "color": "#000000", "pattern": 1}
   ]
 }

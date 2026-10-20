@@ -174,8 +174,8 @@ if __name__ == "__main__":
     fields.update({k: getattr(a, k) for k in REQUIRED + ("doc_name", "rev") if getattr(a, k)})
     pg = Page()
     pg.rect("frame", 0.20, 0.20, A3_W - 0.40, A3_H - 0.40, fill=None, lw=1.25)
-    # default legend = Maaden/KSU convention; cable colours are to be confirmed by the client
-    legend = [{"label": "Ethernet Cable", "color": "#0070C0"}, {"label": "Fiber Optical Cable", "color": "#00B050", "pattern": 2}]
+    from cables import Cables
+    legend = Cables().legend(["ethernet", "fibre", "hardwired"])      # demo: three of the client's cable types
     info = build_footer(pg, fields, legend, notes, allow_tbc=a.tbc)
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     write_vsdx(pg, a.out, a.base, title="Footer demo")

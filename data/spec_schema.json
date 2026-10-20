@@ -1,0 +1,102 @@
+{
+  "_note": "Structure of the diagram spec that the language model produces (and the validator checks). Checks that need data (BOQ rows, dataset ids, cable ids, Purdue levels, the prompt text) are done by scripts/spec.py, not here. Subset of JSON Schema; see scripts/jsonschema_lite.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec_version", "project", "options", "sources", "groups"],
+  "properties": {
+    "spec_version": {"enum": [1]},
+    "prompt": {"type": "string"},
+    "comment": {"type": "string"},
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "end_user": {"type": "string"}, "contractor": {"type": "string"}, "project": {"type": "string"},
+        "doc_name": {"type": "string"}, "prepared_by": {"type": "string"}, "checked_by": {"type": "string"},
+        "approved_by": {"type": "string"}, "rev": {"type": "string"}
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantity_mode", "dmz"],
+      "properties": {
+        "quantity_mode": {"enum": ["instances", "count", "type"]},
+        "max_instances": {"type": "integer", "minimum": 1},
+        "dmz": {"type": "boolean"},
+        "allow_tbc": {"type": "boolean"}
+      }
+    },
+    "sources": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["file", "sheets"],
+        "properties": {"file": {"type": "string", "minLength": 1}, "sheets": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}
+      }
+    },
+    "groups": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "title", "level", "devices"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+          "title": {"type": "string", "minLength": 1},
+          "level": {"type": "string", "minLength": 1},
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["id", "basis", "qty"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+                "basis": {"enum": ["boq", "prompt"]},
+                "component": {"type": "string", "minLength": 1},
+                "label": {"type": "string", "minLength": 1},
+                "qty": {"type": "number"},
+                "unit": {"type": "string"},
+                "quantity_mode": {"enum": ["instances", "count", "type"]},
+                "boq": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["sheet", "row"],
+                        "properties": {"sheet": {"type": "string", "minLength": 1}, "row": {"type": "integer", "minimum": 1}}}},
+                "parts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["sheet", "row"],
+                          "properties": {"sheet": {"type": "string", "minLength": 1}, "row": {"type": "integer", "minimum": 1}}}},
+                "quote": {"type": "string", "minLength": 1},
+                "third_party": {"type": "boolean"},
+                "role": {"enum": ["firewall"]},
+                "vm": {"type": "object", "additionalProperties": false, "required": ["note", "contents"],
+                       "properties": {"note": {"type": "integer", "minimum": 1}, "contents": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}},
+                "boq_override": {"type": "string", "minLength": 3},
+                "note": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["from", "to", "cable", "basis"],
+        "properties": {
+          "from": {"type": "string", "minLength": 1}, "to": {"type": "string", "minLength": 1}, "cable": {"type": "string", "minLength": 1},
+          "redundant": {"type": "boolean"}, "basis": {"enum": ["prompt", "assumed"]}, "quote": {"type": "string", "minLength": 1}, "note": {"type": "string"}
+        }
+      }
+    },
+    "rings": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "cable", "members"],
+        "properties": {"id": {"type": "string", "minLength": 1}, "cable": {"type": "string", "minLength": 1}, "title": {"type": "string"},
+                       "members": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}}}
+      }
+    },
+    "omitted": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["sheet", "row", "reason"],
+        "properties": {"sheet": {"type": "string", "minLength": 1}, "row": {"type": "integer", "minimum": 1}, "reason": {"type": "string", "minLength": 3}}
+      }
+    },
+    "notes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "answers": {"type": "object", "additionalProperties": {"type": "string"}}
+  }
+}

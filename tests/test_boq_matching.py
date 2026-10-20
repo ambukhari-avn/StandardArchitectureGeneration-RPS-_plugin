@@ -4,43 +4,13 @@ import os
 import sys
 import tempfile
 import unittest
-import zipfile
-from xml.sax.saxutils import escape
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-import boq_lines
+sys.path.insert(0, os.path.dirname(__file__))
 import xlsx_reader
 from components import Components
+from xlsx_helper import make_xlsx
 from matching import Matcher, norm_singular, part_tokens
-
-
-def make_xlsx(sheets):
-    """sheets: {name: [[cell, ...], ...]}; cells are str, float/int or None. Returns a path."""
-    p = os.path.join(tempfile.mkdtemp(), "t.xlsx")
-    letters = "ABCDEFGHIJ"
-    with zipfile.ZipFile(p, "w") as z:
-        z.writestr("[Content_Types].xml", "<Types xmlns='http://schemas.openxmlformats.org/package/2006/content-types'/>")
-        names = list(sheets)
-        z.writestr("xl/workbook.xml", "<workbook xmlns='http://schemas.openxmlformats.org/spreadsheetml/2006/main' "
-                   "xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'><sheets>%s</sheets></workbook>" %
-                   "".join("<sheet name='%s' sheetId='%d' r:id='rId%d'%s/>" % (escape(n), i + 1, i + 1, " state='hidden'" if n.startswith("_") else "")
-                           for i, n in enumerate(names)))
-        z.writestr("xl/_rels/workbook.xml.rels", "<Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'>%s</Relationships>" %
-                   "".join("<Relationship Id='rId%d' Type='x' Target='worksheets/sheet%d.xml'/>" % (i + 1, i + 1) for i in range(len(names))))
-        for i, n in enumerate(names):
-            rows = ""
-            for r, row in enumerate(sheets[n], 1):
-                cs = ""
-                for c, v in enumerate(row):
-                    if v is None:
-                        continue
-                    ref = "%s%d" % (letters[c], r)
-                    cs += ("<c r='%s'><v>%s</v></c>" % (ref, v)) if isinstance(v, (int, float)) else \
-                          ("<c r='%s' t='inlineStr'><is><t>%s</t></is></c>" % (ref, escape(v)))
-                rows += "<row r='%d'>%s</row>" % (r, cs)
-            z.writestr("xl/worksheets/sheet%d.xml" % (i + 1), "<worksheet xmlns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'>"
-                       "<sheetData>%s</sheetData></worksheet>" % rows)
-    return p
 
 
 class ReaderTests(unittest.TestCase):
@@ -51,42 +21,6 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(cells, {(1, 1): "x", (1, 2): 2.0, (2, 2): "y & z"})
         with self.assertRaises(KeyError):
             xlsx_reader.read_sheet(p, "nope")
-
-
-class BoqLineTests(unittest.TestCase):
-    def setUp(self):
-        self.p = make_xlsx({
-            "Foreign": [["Filter", "Sr.", "Description", "Model Number", "Make", "Unit", "Qty", "Unit Price"],
-                        ["X", "Flame Detectors"],
-                        ["X", 1, "FS24X kit", "FS24XP", "Honeywell", "No", 19, 5370],
-                        ["X", 2, "Spare", "SP-1", "Honeywell", "No", 0, 10],
-                        ["X", "Sounder"],
-                        ["X", 1, "Indoor Sounder", "GYJ", "Crown", "No", 1, 50]],
-            "PLC": [[None], ["Sr.No", "Description", "Make", "Model Number", "Unit", "Qty"],
-                    ["PLC System"],
-                    [1, "Power Supply", "Rockwell", "1756-PA72", "No", 2]],
-        })
-
-    def test_columns_found_by_header_in_any_order(self):
-        a = boq_lines.read_lines(self.p, "Foreign")
-        self.assertEqual([(l["description"], l["model"], l["make"], l["qty"]) for l in a],
-                         [("FS24X kit", "FS24XP", "Honeywell", 19.0), ("Indoor Sounder", "GYJ", "Crown", 1.0)])
-        b = boq_lines.read_lines(self.p, "PLC")
-        self.assertEqual((b[0]["description"], b[0]["make"], b[0]["model"], b[0]["qty"]), ("Power Supply", "Rockwell", "1756-PA72", 2.0))
-
-    def test_headings_become_sections_and_zero_qty_is_skipped(self):
-        a = boq_lines.read_lines(self.p, "Foreign")
-        self.assertEqual([l["section"] for l in a], ["Flame Detectors", "Sounder"])
-        self.assertNotIn("Spare", [l["description"] for l in a])
-
-    def test_price_columns_are_not_read(self):
-        a = boq_lines.read_lines(self.p, "Foreign")
-        self.assertTrue(all(set(l) == {"sheet", "row", "section", "description", "model", "make", "unit", "qty"} for l in a))
-        self.assertNotIn(5370.0, [v for l in a for v in l.values()])
-
-    def test_sheet_without_header_is_an_error(self):
-        with self.assertRaises(ValueError):
-            boq_lines.read_lines(make_xlsx({"S": [["a", "b"]]}), "S")
 
 
 def comps(items):

@@ -8,8 +8,13 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 |---|---|---|---|---|---|
 | Q1 | Instruction file (do and don't rules) | Holds rules we must not invent: when a BOQ category is drawn or skipped, allowed connections, naming. | Provisional file in `skills/arch/instructions.md`. | Client | A short style sheet (cable colours and four drawing rules) arrived 2026-10-20; the do and don't rules did not |
 | Q2 | Cable colour standard | Legend and cables read from the cable table. | **Answered** (D22). Still open: dash style (none given, so solid) and the legend wording (we use the client's connection-type names). | Client | Mostly answered |
-| Q29 | **DMZ (Level 3.5) rules.** The instructions say "represented with boxes when needed" and mention an attached example architecture for L3.5. That example was not in the document or the folder. When is a DMZ needed? What boxes does it hold? Which connections must cross it? | Purdue validation and the DMZ layout. | Draw no DMZ unless the prompt or BOQ asks for one. | Client |
-| Q30 | **VM contents.** "Whenever there is a VM, what is inside it is mentioned in a text box or on the side, as in the example." How does the BOQ say a server is a VM and what is inside it? | Needs the example architecture. | Not drawn until the example arrives. | Client |
+| Q29 | **ANSWERED 2026-10-20 (D24): the prompt says whether there is a DMZ and what is in it.** Earlier text: DMZ (Level 3.5) rules. *Partly answered by the WAVE example:* it shows a firewall between the enterprise layer and the DMZ, an OT firewall between the DMZ and Level 3, and inside the DMZ switches, a firewall manager, a redundant cybersecurity management server, network-attached storage, SIEM, Nozomi Guardian and Nozomi CMC, plus a text box of services (Active Directory, patch management, and so on). Still open: The instructions say "represented with boxes when needed" and mention an attached example architecture for L3.5. That example was not in the document or the folder. When is a DMZ needed? What boxes does it hold? Which connections must cross it? | Purdue validation and the DMZ layout. | Draw no DMZ unless the prompt or BOQ asks for one. | Client |
+| Q30 | **ANSWERED 2026-10-20 (D25): the server's BOQ line says it is a VM.** Earlier text: VM contents. *Shown by the WAVE example:* a dashed "Virtual Environment" box with a note number ("Note 1") around the servers, and the note's contents as boxes in a side panel. Still open: "Whenever there is a VM, what is inside it is mentioned in a text box or on the side, as in the example." How does the BOQ say a server is a VM and what is inside it? | Needs the example architecture. | Not drawn until the example arrives. | Client |
+| Q32 | **Example architecture (Project WAVE, SEWA) received 2026-10-20.** It answers part of Q29 and Q30 (see below) but its legend does not follow the colour standard: Ethernet is black, a *redundant* Ethernet cable is red, Hardwired is black. The standard says Ethernet blue and Fibre red. Which is right? Is "redundant Ethernet" a cable type of its own? | Cable table and legend. | The standard (D22). | Client |
+| Q33 | **Mirrored sites.** The example draws a primary site (MCC) and a secondary site (DRC) side by side, each with the same layers, linked by "By SEWA" arrows. Is mirroring a layout feature the plugin must support, and how does a prompt or BOQ ask for it? | Layout engine needs a "repeat this set of groups" primitive. | Not supported until confirmed. | Client |
+| Q34 | **Scope colouring and footer variant.** The example shades Avanceon scope grey and Client's scope pink (legend boxes), and its footer has "Client:", "Drawing No.", Prepared / Approved / Checked (that order) and a blank "Size", with no Contractor. Our footer has End User, Contractor, Prepared / Checked / Approved and Size A3. Which footer is standard, and is scope colouring required? | Footer form and legend. | Our footer (all files get the footer, D5); no scope colouring. | Client |
+| Q35 | **Pictures versus boxes at Level 1.** In the example even a new RTU is a box ("New RTU", "Existing Schneider M340", "Existing Trango logger"), while servers, workstations, the laptop, firewalls, switches and gateways are pictures. The dataset has PLC and RTU pictures. Which rule decides? | D8 and D23. | Dataset picture where one exists, except field devices (D23). | Client |
+| Q36 | **A3 legibility, again.** The example page is 35.2 x 20.3 in with 10 to 12 pt text. Fitted to A3 width (x0.47) that text becomes 3.8 to 5.6 pt, below the 6 pt floor. | Same conflict as Q6. | Q6 default. | Client |
 | Q31 | **Rules removed from the first version.** An earlier draft told us to show DIN-rail or rack-mount switches, a patch panel in the networking layer, generic gateways, servers, firewalls, SCADA switches, and had an unclear "PLT" process item. The second version drops them. Are they gone, or just not restated? | Decides switch and gateway handling. | Draw whatever the BOQ and dataset give; unmatched items become boxes (D18). | Client |
 
 ## Decisions we need
@@ -47,7 +52,16 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 | Q19 | The dataset's Read me says pictures came from Google image results. Is internal use inside Avanceon diagrams confirmed? | Client |
 | Q20 | Held-out set for evaluation: Murtiba. KSU was studied in detail during the spike, so it is no longer a clean hold-out. Rules must not be written from Murtiba. | Me |
 
-## Plugin format (from the official docs, checked 2026-10-19)
+## Platform: ChatGPT (changed 2026-10-20)
+
+| # | Question | Why it matters | Default until answered | Owner |
+|---|---|---|---|---|
+| Q40 | **Which ChatGPT form is "the plugin"?** Options seen in third-party sources (OpenAI's own help pages returned 403 to me, so none of this is verified): (a) a custom GPT with Code Interpreter, a short instruction text and uploaded knowledge files, running our scripts in its sandbox; (b) an app built with the Apps SDK, which needs an MCP server hosted over HTTPS and a review before public use. | Decides packaging, how files reach the user, what limits apply, and whether anything must be hosted. | Keep the Python core unchanged; build nothing ChatGPT-specific until this is answered. | User |
+| Q41 | **Limits to confirm before packaging a custom GPT** (secondhand figures only): about 20 knowledge files per GPT; instructions about 4,000 tokens; whether Code Interpreter can unzip an uploaded bundle and run Python from it; whether it can hand a generated .vsdx back as a download. Our repo is many files, so it would ship as one zip. | Whether the design fits at all. | Ship scripts, data and icons as a single zip. | Me, once Q40 is answered |
+| Q42 | **Which model writes the spec?** The "Claude produces the spec" step becomes "ChatGPT produces the spec". The spec schema, validator and instruction file must be written for it, and its output checked by the validator before anything is drawn. | Phase 4 design. | Model-neutral spec; the validator is the gate. | Me |
+| Q43 | **Instruction text.** `skills/arch/instructions.md` and the footer-form wording refer to Claude and slash commands. They need rewriting for a GPT's instruction field (short, so the long rules must live in a knowledge file). | Phase 6. | Provisional text stays until Q40. | Me |
+
+## Claude plugin format (checked 2026-10-19; superseded by the move to ChatGPT, kept for reference)
 
 | # | Item | Default |
 |---|---|---|
@@ -65,3 +79,11 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 - Components in the supplied BOQs with no dataset entry (sounder, beacon, manual call point, open-path detector, GPS clock, SmartX AS-P, Modicon Edge I/O NTS; no Rockwell or Honeywell parts). Under D8 these become rectangles, or Q4 applies.
 - The dataset has no ids, aliases or label positions. Ids are generated by the importer; aliases are added only after confirmation (D21).
 - Match coverage on the real BOQs (`scripts/match_report.py`): Kemari 55 distinct items and Korangi 64, none matched at line level; at heading level Korangi matches 1 of 17 ("Flame Detectors"). The dataset holds generic types; the BOQ lines are model-specific commercial items.
+
+## Seen while building Phase 3 (no action unless it causes a problem)
+- The Korangi workbook is a copy of Kemari: its BOQ heading still reads "PRL - Kemari".
+- Murtiba quantities such as 8.66667 (18 lines in `BOQ Rockwell SIL2`) cannot be real counts; they are rounded up and noted when drawn.
+- Murtiba sheets carry a lot of zero-quantity lines (66 in `BOQ Rockwell SIL2`, 186 in `BOQ Rockwell SIL3 ALTERNATE`): options not taken. They are listed in the BOQ report, not drawn.
+- The KSU zone ("New Buildings") is lost from the parents of `All Instruments` and similar sections that follow it; the heading outline still holds the full order, so nothing is lost for a reader of the outline.
+- Which Murtiba sheet is "the BOQ" depends on the variant (Rockwell or Honeywell, SIL-2 or SIL-3); the run must say which, and `boq_report.py --list` shows the candidates.
+

@@ -10,7 +10,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import boq_lines
+import boq_parser
 from components import Components
 from matching import Matcher
 
@@ -20,7 +20,7 @@ def build_report(path, sheets, comps=None, matcher=None):
     matcher = matcher or Matcher(comps)
     seen, headings = {}, {}
     for sh in sheets:
-        for ln in boq_lines.read_lines(path, sh):
+        for ln in boq_parser.parse_sheet(path, sh)["lines"]:
             if ln["section"]:
                 headings.setdefault(ln["section"], 0)
                 headings[ln["section"]] += 1

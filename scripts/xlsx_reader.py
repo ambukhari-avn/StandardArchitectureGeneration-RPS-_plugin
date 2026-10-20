@@ -1,7 +1,7 @@
 """Minimal .xlsx reader. Standard library only (an .xlsx is a zip of XML).
 
     sheets(path)               -> [(name, state)]            state is 'visible' or 'hidden'
-    read_sheet(path, name)     -> {(row, col): value}        1-based; numbers as float, text as str; cached values only
+    read_sheet(path, name, max_row=None) -> {(row, col): value}   1-based; numbers as float, text as str; cached values only
     sheet_geometry(path, name) -> (default_row_height_pt, {row: height_pt})
     drawing_pictures(path, name) -> pictures anchored on the sheet (see below)
 """
@@ -47,7 +47,8 @@ def _col(letters):
     return n
 
 
-def read_sheet(path, name):
+def read_sheet(path, name, max_row=None):
+    """Cell values of a sheet. With max_row, reading stops after that row (cheap header discovery on huge sheets)."""
     with zipfile.ZipFile(path) as z:
         part = _sheet_part(z, name)
         sst = []
@@ -55,20 +56,28 @@ def read_sheet(path, name):
             for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall(_M + "si"):
                 sst.append("".join(t.text or "" for t in si.iter(_M + "t")))
         cells = {}
-        for c in ET.fromstring(z.read(part)).iter(_M + "c"):
-            v, t = c.find(_M + "v"), c.get("t")
-            if t == "inlineStr":
-                val = "".join(x.text or "" for x in c.iter(_M + "t"))
-            elif v is None or v.text is None:
-                continue
-            elif t == "s":
-                val = sst[int(v.text)]
-            elif t in ("str", "e", "b"):
-                val = v.text
-            else:
-                val = float(v.text)
-            m = re.match(r"([A-Z]+)(\d+)", c.get("r"))
-            cells[(int(m.group(2)), _col(m.group(1)))] = val
+        with z.open(part) as fh:
+            for _, el in ET.iterparse(fh, events=("end",)):
+                if el.tag != _M + "row":
+                    continue
+                for c in el.findall(_M + "c"):
+                    v, t = c.find(_M + "v"), c.get("t")
+                    if t == "inlineStr":
+                        val = "".join(x.text or "" for x in c.iter(_M + "t"))
+                    elif v is None or v.text is None:
+                        continue
+                    elif t == "s":
+                        val = sst[int(v.text)]
+                    elif t in ("str", "e", "b"):
+                        val = v.text
+                    else:
+                        val = float(v.text)
+                    m = re.match(r"([A-Z]+)(\d+)", c.get("r"))
+                    cells[(int(m.group(2)), _col(m.group(1)))] = val
+                rnum = int(el.get("r", 0))
+                el.clear()
+                if max_row is not None and rnum >= max_row:
+                    break
         return cells
 
 

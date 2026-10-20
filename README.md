@@ -4,9 +4,10 @@ Generates a one-page A3 Purdue-model architecture diagram as an editable Visio `
 Claude decides *what* goes in the diagram (a structured spec). Fixed, tested code validates the spec, lays it out
 and writes the file. No model draws, positions or spells anything.
 
-**Status: Phase 1 (skeleton).** Built: the footer (title block, notes, legend, logo, fill-in form), the `.vsdx` writer,
-and a plugin skeleton whose `/arch:arch` command currently builds a footer-only page. Not built yet: BOQ reading, the
-spec, layout, cables. See `docs/decisions.md` and `docs/open-questions.md`.
+**Status: Phase 2 (data layer) done.** Built: the footer, the `.vsdx` writer, a plugin skeleton whose `/arch:arch` command
+currently builds a footer-only page, the component dataset (85 rows imported, 23 with pictures), the Purdue map, the cable
+table, picture/box drawing, and exact BOQ-to-component matching with a report. Not built yet: the full BOQ parser, the spec,
+layout, cable routing. See `docs/decisions.md`, `docs/open-questions.md` and `docs/dataset-import-report.md`.
 
 ## Layout
 ```
@@ -14,9 +15,14 @@ spec, layout, cables. See `docs/decisions.md` and `docs/open-questions.md`.
 skills/arch/SKILL.md         the /arch:arch command
 skills/arch/instructions.md  do / don't rules (provisional until the client's file arrives)
 hooks/                       hooks (Phase 6)
-scripts/                     footer.py, footer_form.py, vsdx_writer.py (Python standard library only)
+scripts/                     Python standard library only:
+                             vsdx_writer, footer, footer_form, textfit, draw        writing the page
+                             xlsx_reader, import_dataset, components, purdue, cables   data layer
+                             boq_lines, matching, match_report                      BOQ matching
+                             catalogue (dev check), make_base (one-off)
 scripts/spike/               reference-only first spike; hard-coded paths; not part of the runtime
-data/                        footer_form.json (and the component dataset, Phase 2)
+data/                        components.json + icons/ (imported dataset), purdue_map.json, cable_types.json,
+                             aliases.json (confirmed BOQ wording; empty), footer_form.json
 base/                        avanceon_logo.png, base.vsdx (empty A3 page on a Visio-made package skeleton)
 samples/  tests/  docs/
 ```
@@ -29,7 +35,15 @@ set ARCH_BASE_VSDX=base\base.vsdx
 python -m unittest discover -s tests -v
 ```
 
-Make a footer-only page (generated files go to `Downloads\out`):
+Import the dataset again, check a BOQ against it, or draw the one-page catalogue (files go to `Downloads\out`):
+
+```
+python scripts\import_dataset.py <system_architecture_dataset.xlsx>
+python scripts\match_report.py <boq.xlsx> --sheet "BOQ Foreign" --sheet "PLC F&G"
+python scripts\catalogue.py
+```
+
+Make a footer-only page:
 
 ```
 python scripts\footer.py --print-form

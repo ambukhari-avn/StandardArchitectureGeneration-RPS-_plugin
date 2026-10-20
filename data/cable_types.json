@@ -1,0 +1,9 @@
+{
+  "_note": "Cable types: label, colour, dash style. PLACEHOLDER values (Ethernet blue, fibre green, hardwire black as on the Maaden, KSU and Murtiba legends) until the client's cable colour standard arrives (open question Q2). pattern: 1 = solid, 2 = dashed.",
+  "status": "placeholder",
+  "cables": [
+    {"id": "ethernet", "label": "Ethernet Cable",      "color": "#0070C0", "pattern": 1},
+    {"id": "fiber",    "label": "Fiber Optical Cable", "color": "#00B050", "pattern": 1},
+    {"id": "hardwire", "label": "Hardwire",            "color": "#000000", "pattern": 1}
+  ]
+}

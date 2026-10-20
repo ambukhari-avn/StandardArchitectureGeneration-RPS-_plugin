@@ -13,8 +13,8 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 
 | # | Question | Why it matters | Default until answered | Owner |
 |---|---|---|---|---|
-| Q3 | Dataset layer name to Purdue level mapping. The dataset has 11 layer labels: Network, SCADA / L2, HMI, PLC / L1, Field device, Sensor / L0, Field device / L0, Analyzer / L0, Sensor, Detector, Power. Only some carry L0, L1 or L2. | Bands come from this. Levels 3, 3.5 and 4 appear nowhere in the dataset. | I draft the mapping from the labels' own L0/L1/L2 tags; the rest are marked "unassigned" and need an answer. | Client or user |
-| Q4 | A BOQ item has no dataset entry. | Decides whether the run stops or draws something. | Stop and ask. Alternative: draw a rectangle using the BOQ wording and flag it in the Notes. | User |
+| Q3 | Dataset layer name to Purdue level mapping. The dataset has 11 layer labels: Network, SCADA / L2, HMI, PLC / L1, Field device, Sensor / L0, Field device / L0, Analyzer / L0, Sensor, Detector, Power. Only some carry L0, L1 or L2. | Bands come from this. Levels 3, 3.5 and 4 appear nowhere in the dataset. | Drafted in `data/purdue_map.json`. Five labels carry their own tag (L0, L1, L2). Sensor, Field device, Detector and Power are *proposed* as level 0; HMI and Network *inherit* the level of the group they are placed in. No dataset layer maps to levels 3, 3.5 or 4. | Client or user |
+| Q4 | A BOQ item has no dataset entry. | Decides whether the run stops or draws something. | Now drawn as a rectangle with the BOQ wording, flagged in the Notes (decision D18, provisional). Reason: only 1 of Korangi's 17 BOQ headings matches a dataset component, so stopping on each would not work. Confirm, and confirm the text comes from the BOQ. | User |
 | Q5 | Draw every Purdue level, or only the levels in use? | Changes the look of small diagrams. | Only levels in use. | User |
 | Q6 | True A3 legibility versus showing everything. The approved KSU drawing is 41.9 x 16.4 in and the Murtiba pages are about 19 x 15 in, both labelled "A3". | A3 and "draw all 50 buildings" cannot both hold at 6 pt. | A3, one page, no collapsing. If it does not fit, fail with a report naming what did not fit. | Client |
 | Q7 | Is collapsing identical items ("OWS-01 to OWS-06", "Building x50") allowed? | The overflow ladder's fourth step. | Off. | Client |
@@ -31,6 +31,8 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 | Q13 | Room and area grouping (control room versus server room). Engineering knowledge, not BOQ content. | Ask, or take it from the instruction file. |
 | Q14 | KSU building names and IDs. The BOQ says "list attached in Appendix". | Needs the appendix as an input. |
 | Q15 | Murtiba has four pages (Rockwell and Honeywell, SIL-2 and SIL-3). Is a run one variant on one page? | One variant per run. |
+| Q27 | **Label wording.** Dataset titles are generic ("Compact PLC", "Safety PLC", "HMI panel"; several brands share one title). Engineers' drawings often print the model ("Rockwell L81E", "S7-1200 G2 CPU 1214C"). Should the label be the title only, or title plus part number? | Decides how a picture and its label read. | Title only. | Client |
+| Q28 | **Labels that contain a note.** "Rack server (use 2 stacked for redundant pair)" is used verbatim as a label. Is the bracket part of the label or an instruction? | Spelling and appearance. | Verbatim. | Client |
 | Q16 | Which footer variants must be supported besides the Avanceon one (Khobar uses the client's own title block)? | Avanceon footer on every page (client decision). |
 
 ## Housekeeping
@@ -54,7 +56,9 @@ Each item has a default so work can continue. "Owner" is who can answer. Update 
 | Q26 | **Version pinning.** If `version` is set in `plugin.json`, teammates only get updates when it is bumped. | Bump on every release. |
 
 ## Seen in the dataset review (no action unless it causes a problem)
-- Row 37 is labelled "Industrial switch, CISCO" but its picture looks like a limit switch with a roller arm. Rows 31 and 33 look doubtful.
-- 34 rows name an image file that is not embedded; 29 have neither picture nor file name.
+- Row 37 is labelled "Industrial switch, CISCO" but its picture is a limit switch with a roller arm (visible in the catalogue page). Rows 31 and 33 look doubtful.
+- 23 distinct components have a picture. 20 rows name an image file that is not embedded and are drawn as boxes. (An earlier count of 22 pictured rows and 34 such rows was wrong; the importer's report is the reference.)
+- Row 35's picture is anchored on row 34 but sits in row 35; stacked pictures under rows 2, 16 and 18 are not used (D17).
 - Components in the supplied BOQs with no dataset entry (sounder, beacon, manual call point, open-path detector, GPS clock, SmartX AS-P, Modicon Edge I/O NTS; no Rockwell or Honeywell parts). Under D8 these become rectangles, or Q4 applies.
-- The dataset has no ids, aliases or label positions. The matching from BOQ wording to components will be built in Phase 2 and confirmed before use.
+- The dataset has no ids, aliases or label positions. Ids are generated by the importer; aliases are added only after confirmation (D21).
+- Match coverage on the real BOQs (`scripts/match_report.py`): Kemari 55 distinct items and Korangi 64, none matched at line level; at heading level Korangi matches 1 of 17 ("Flame Detectors"). The dataset holds generic types; the BOQ lines are model-specific commercial items.

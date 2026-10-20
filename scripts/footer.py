@@ -13,6 +13,7 @@ import math
 import os
 import re
 
+from textfit import TextFitError, fit_size
 from vsdx_writer import A3_H, A3_W, FONT_FLOOR, png_size
 
 LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "base", "avanceon_logo.png")
@@ -34,15 +35,10 @@ class FooterError(ValueError):
 
 def _fit(text, w, h, sizes, bold=False, what="text"):
     """Largest size from `sizes` (descending) at which `text` fits w x h; raises if none, never goes below the floor."""
-    for size in sizes:
-        if size < FONT_FLOOR:
-            break
-        cw = 0.52 * size / 72 * (1.08 if bold else 1.0)        # conservative average glyph width
-        per_line = max(1, int((w - 0.04) / cw))
-        lines = sum(max(1, math.ceil(len(seg) / per_line)) for seg in text.split("\n"))
-        if lines * size * 1.2 / 72 <= h + 0.01:
-            return size
-    raise FooterError("%s does not fit at or above %.1f pt: %r" % (what, FONT_FLOOR, text[:60]))
+    try:
+        return fit_size(text, w, h, sizes, bold)
+    except TextFitError:
+        raise FooterError("%s does not fit at or above %.1f pt: %r" % (what, FONT_FLOOR, text[:60]))
 
 
 def _clean(v):

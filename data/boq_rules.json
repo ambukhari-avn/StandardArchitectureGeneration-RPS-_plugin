@@ -1,0 +1,37 @@
+{
+  "_note": "PROVISIONAL classification of BOQ lines, derived from the approved drawings (Kemari, Korangi, KSU, Murtiba) and the five BOQs. Not from the client's instruction file, which has no such rules (open question Q1). Rules are tried in order; the first whose conditions all match wins. Conditions are case-insensitive regular expressions searched in the named field. 'description' is searched in the headline only (the first 70 characters), because BOQ descriptions often carry pages of spec text that mention cables, warranties and modules; 'description_full' searches all of it. A line that matches nothing gets the default bucket and is reported as 'by default'.",
+  "status": "provisional",
+  "headline_chars": 70,
+  "buckets": ["device", "component", "service", "software", "cable", "material", "documentation", "spares"],
+  "default": "device",
+  "rules": [
+    {"id": "doc-section", "bucket": "documentation", "section": "^documentation$", "reason": "Certificates and documents are not equipment."},
+    {"id": "doc-desc", "bucket": "documentation", "description": "^(certificates?|cert of origin)\\b", "reason": "Certificates are not equipment."},
+    {"id": "spares", "bucket": "spares", "description": "^spares\\b|\\bspare parts\\b", "reason": "Spares are stock, not part of the architecture."},
+
+    {"id": "dev-os-pc", "bucket": "device", "description": "^operating system\\b.*\\bseparate pc\\b", "reason": "A workstation specified inside a materials section."},
+    {"id": "dev-patch-panel", "bucket": "device", "description": "patch panel", "reason": "Shown in the networking layer; its 'patch cords' are not a separate cable line."},
+    {"id": "dev-switch", "bucket": "device", "description": "\\bswitch(es)?\\b(?!\\s+module)", "reason": "A switch is a device even when the line says '& cable'. 'Switch module' and 'switchover' are rack parts and are not caught."},
+    {"id": "comp-panel-internals", "bucket": "component", "description": "panel internal wiring|feed-through|marshalling$|knife disconnect", "reason": "Panel internals."},
+
+    {"id": "svc-umbrella", "bucket": "service", "description": "supply, installation|modification in existing panel", "reason": "Package line covering supply and works."},
+    {"id": "svc-install", "bucket": "service", "description": "^installation of\\b|^civil bases|^cable trenches", "reason": "Site works."},
+    {"id": "svc-engineering", "bucket": "service", "description": "^engineering\\b", "unit": "^(job|lot|man[- ]?days?|hours?.*)$", "reason": "Engineering work. An 'Engineering Laptop' has unit pcs and is not caught."},
+    {"id": "svc-words", "bucket": "service", "description": "design services|functional design|plc programming|scada development|engineering and configuration|engineering ix|project management|remote support|snag list|^training$|\\bdlp\\b|warranty|commissioning|\\bsat\\b|\\bfat\\b|factory acceptance|techconnect|support coverage|hardening job|script programming|configuration$|implementation|cable pulling|^design and supply", "reason": "Services."},
+    {"id": "svc-unit", "bucket": "service", "unit": "^(man[- ]?days?|days?|hours?(\\s*/\\s*lot)?)$", "reason": "Time-based units are services."},
+
+    {"id": "sw-words", "bucket": "software", "description": "licen[cs]e|software|sofware|aveva|studio 5000|factory ?talk|\\bft (view )?studio|xlreporter|customer first|media kit|workbench|runtime base|designer|utilities|point b(ui)?lder|\\bsc sb r\\d|vektra|\\blic\\b|\\bsw\\b|antivirus", "reason": "Software and licences."},
+    {"id": "sw-model", "bucket": "software", "model": "^(9800-|9324m-)|ms windows|microsoft|xlr-pro", "reason": "Software and support order codes; also lines whose description repeats the PC's and whose model says Windows or Office."},
+    {"id": "sw-make", "bucket": "software", "make": "^(microsoft|symantec|smart sights)", "reason": "Software vendors."},
+
+    {"id": "comp-detector-parts", "bucket": "component", "description": "name ?plates?|labels?\\b|reducer|sun ?shield|sunshade|pole mount|pipe mount|blanking plug|mount(ing)? kit|gas tbl|\\boeld\\b|gassing cover", "reason": "Accessories of a field detector."},
+    {"id": "mat-misc", "bucket": "material", "description": "misc items|contingency|miscellaneous", "reason": "Miscellaneous and contingency."},
+    {"id": "cable-words", "bucket": "cable", "description": "\\bcables?\\b|\\bcabling\\b|conduit|\\bglands?\\b|\\blugs?\\b|ladder|\\btray|sleeves?|^\\d+ (pair|quad|core)|sensing cable", "reason": "Cables and cable accessories (headline only, so a device whose long description mentions a cable is not caught)."},
+    {"id": "cable-section", "bucket": "cable", "section": "^(cables|cable glands|cable conduits|supply of cable trays)$", "reason": "Cable sections."},
+    {"id": "mat-section", "bucket": "material", "section": "calibration|testing tools|junction box|junction boxes|supply of poles|^supports?\\b", "reason": "Installation materials and tools."},
+
+    {"id": "comp-modules", "bucket": "component", "description": "^.{0,35}\\b(chassis|backplane|power supply|power status|power distr|busbar|terminal (block|base|housing)s?|tb housing|termination|ta|adapter|bus ?adapter|carrier|mounting (base|rail)|base unit|base for|filler|blanking|jumper|fan unit|spring terminal|redundancy module|bridge module|communication module|communication adaptor|input module|output module|digital (input|output)|(digital|analog|analogue) \\d+ (input|output)|analog(ue)? (input|output|in|out)|i/o (module|scanner|base)|io module|module|slot|rack|switchover|iota|uio|rtp|extension module|network interface|ethernet module|et 200sp|fta|redundant (i/o|switch module|sil)|backup battery)\\b|^psu\\b", "reason": "Rack modules and panel parts: they build up a controller, I/O rack or panel and are not drawn on their own. Only the start of the description is searched."},
+    {"id": "comp-ksu", "bucket": "component", "description": "^(ps-24v|tb-ps|terminal base|as-p complete|univ\\.power|high power isol|4 slots eth)", "reason": "KSU controller and panel parts."},
+    {"id": "mat-words", "bucket": "material", "description": "\\bjbs?\\b|junction box|support and stands?|\\bplate\\b|\\bchannel\\b|\\bangle\\b|\\bbolts?\\b|cross arm|\\bpipe\\b|shelter|mounting structure|sealing compound|solar cable|battery cable|\\bbatteries\\b|external box for batteries", "reason": "Installation materials."}
+  ]
+}

@@ -1,13 +1,15 @@
-# Architecture diagram generator (Claude plugin)
+# Architecture diagram generator (ChatGPT plugin, in progress)
 
 Generates a one-page A3 Purdue-model architecture diagram as an editable Visio `.vsdx` from a project BOQ.
-Claude decides *what* goes in the diagram (a structured spec). Fixed, tested code validates the spec, lays it out
+The model decides *what* goes in the diagram (a structured spec). Fixed, tested code validates the spec, lays it out
 and writes the file. No model draws, positions or spells anything.
 
-**Status: Phase 2 (data layer) done.** Built: the footer, the `.vsdx` writer, a plugin skeleton whose `/arch:arch` command
-currently builds a footer-only page, the component dataset (85 rows imported, 23 with pictures), the Purdue map, the cable
-table, picture/box drawing, and exact BOQ-to-component matching with a report. Not built yet: the full BOQ parser, the spec,
-layout, cable routing. See `docs/decisions.md`, `docs/open-questions.md` and `docs/dataset-import-report.md`.
+**Platform:** the plugin is now to be built for **ChatGPT**, not Claude (decision D26). The Python core below is unaffected;
+the Claude packaging (`.claude-plugin/`, `skills/`) is superseded and will be replaced once the ChatGPT form is chosen (open question Q40).
+
+**Status: Phase 3 (BOQ input) done.** Built: footer, `.vsdx` writer, dataset import, Purdue map, cable table (client colours),
+picture/box drawing, exact matching, the general BOQ parser, line classification rules, and quantity rules. Not built yet: the
+spec and its validator (Phase 4), layout and cable routing (Phase 5), the ChatGPT packaging (Phase 6). See `docs/`.
 
 ## Layout
 ```
@@ -18,11 +20,12 @@ hooks/                       hooks (Phase 6)
 scripts/                     Python standard library only:
                              vsdx_writer, footer, footer_form, textfit, draw        writing the page
                              xlsx_reader, import_dataset, components, purdue, cables   data layer
-                             boq_lines, matching, match_report                      BOQ matching
+                             boq_parser, boq_rules, quantity, boq_report                 reading and classifying a BOQ
+                             matching, match_report                                 BOQ wording to dataset components
                              catalogue (dev check), make_base (one-off)
 scripts/spike/               reference-only first spike; hard-coded paths; not part of the runtime
 data/                        components.json + icons/ (imported dataset), purdue_map.json, cable_types.json,
-                             aliases.json (confirmed BOQ wording; empty), footer_form.json
+                             aliases.json (confirmed BOQ wording; empty), boq_rules.json (classification), footer_form.json
 base/                        avanceon_logo.png, base.vsdx (empty A3 page on a Visio-made package skeleton)
 samples/  tests/  docs/
 ```
@@ -41,6 +44,8 @@ Import the dataset again, check a BOQ against it, or draw the one-page catalogue
 python scripts\import_dataset.py <system_architecture_dataset.xlsx>
 python scripts\match_report.py <boq.xlsx> --sheet "BOQ Foreign" --sheet "PLC F&G"
 python scripts\catalogue.py
+python scripts\boq_report.py <boq.xlsx> --list
+python scripts\boq_report.py <boq.xlsx> --sheet "BOQ Foreign" --sheet "PLC F&G"
 ```
 
 Make a footer-only page:

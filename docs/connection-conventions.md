@@ -17,5 +17,5 @@ pictures is used (decision D30).
 Client rules that are not observations: PLC-to-field control signals are always hardwired (user); the cable colours (client's drawing
 instructions); field devices, third-party connectivity and the DMZ are drawn as boxes (client's drawing instructions).
 
-What is **not** known and must not be guessed: which device connects to which in a given project. The BOQ never says. Unless the
-prompt states a link, it is an assumption.
+What is **not** known and must not be guessed: which device connects to which in a given project. Unless the
+user states a link, the model asks; it is drawn only if the user states it or says to use the usual arrangement (then it is `assumed`).

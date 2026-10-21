@@ -1,5 +1,7 @@
 # Open questions
 
+> **Since D40 (2026-10-21)** there is no BOQ and no Claude packaging. These questions no longer apply: Q8-Q10, Q14, Q15, Q18, Q21-Q26, Q43, Q44, Q46. Q20 now means a held-out set of real prompts. The rest stand until answered.
+
 Each item has a default so work can continue. "Owner" is who can answer. Update the status when answered and move the answer into `decisions.md`.
 
 ## Waiting on the client

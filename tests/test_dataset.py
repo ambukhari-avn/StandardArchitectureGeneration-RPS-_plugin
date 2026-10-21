@@ -63,7 +63,7 @@ class ImportedDataTests(unittest.TestCase):
     def test_counts(self):
         self.assertEqual(len(self.c.all), 85)
         self.assertEqual(len(self.c.distinct()), 70)
-        self.assertEqual(sum(1 for x in self.c.distinct() if x["picture"]), 23)
+        self.assertEqual(sum(1 for x in self.c.distinct() if x["picture"]), 37)
 
     def test_ids_unique_and_repeats_resolve(self):
         self.assertEqual(len({x["id"] for x in self.c.all}), len(self.c.all))

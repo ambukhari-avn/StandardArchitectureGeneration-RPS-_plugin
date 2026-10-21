@@ -1,71 +1,52 @@
 # Architecture diagram generator (ChatGPT plugin, in progress)
 
-Generates a one-page A3 Purdue-model architecture diagram as an editable Visio `.vsdx` from a project BOQ.
-The model decides *what* goes in the diagram (a structured spec). Fixed, tested code validates the spec, lays it out
-and writes the file. No model draws, positions or spells anything.
+Generates a one-page A3 Purdue-model architecture diagram as an editable Visio `.vsdx` from the user's prompt.
+The user writes only a prompt. The model asks questions until nothing is unclear, then writes a structured spec; fixed, tested
+code validates the spec, lays it out and writes the file. No model draws, positions or spells anything, and nothing is drawn that
+the user did not say.
 
-**Platform:** the plugin is now to be built for **ChatGPT**, not Claude (decision D26). The Python core below is unaffected;
-the Claude packaging (`.claude-plugin/`, `skills/`) is superseded and will be replaced once the ChatGPT form is chosen (open question Q40).
+**Inputs:** the user's prompt (the only project input; no BOQ), `system_architecture_dataset.xlsx` (the component library and the
+only source of pictures), and the client's drawing instructions. **Platform:** ChatGPT (decision D26).
 
-**Status: Phase 4 (spec and validator) done.** Built: footer, `.vsdx` writer, dataset import, Purdue map, cable table, picture/box
-drawing, exact matching, BOQ parser, classification rules, quantity rules, the **spec format and validator**, and the **model
-input pack**. The spec step can be tried by hand in ChatGPT today (`docs/chatgpt-trial.md`). Not built yet: layout and cable
-routing (Phase 5), the ChatGPT packaging (Phase 6), evaluation (Phase 7). See `docs/`.
+**Status:** the drawing core is built and tested: footer, `.vsdx` writer, dataset import (including the vector symbols), Purdue map,
+cable table, picture/box drawing, exact component matching, quantity rules, the spec format and validator, and the diagram builder.
+Not built yet: the ChatGPT packaging (Phase 6) and the evaluation on real prompts (Phase 7). Nothing has been confirmed to open in
+real Visio beyond a first check (open question Q17). See `docs/`.
 
 ## Layout
 ```
-.claude-plugin/plugin.json   plugin manifest
-skills/arch/SKILL.md         the /arch:arch command
-skills/arch/instructions.md  do / don't rules (provisional until the client's file arrives)
-hooks/                       hooks (Phase 6)
-scripts/                     Python standard library only:
+chatgpt-plugin/              what is assembled for ChatGPT: instructions.md (the model's instructions) and a README
+scripts/                     Python standard library only (dev_preview needs Pillow and is a development aid):
                              vsdx_writer, footer, footer_form, textfit, draw        writing the page
-                             xlsx_reader, import_dataset, components, purdue, cables   data layer
-                             boq_parser, boq_rules, quantity, boq_report                 reading and classifying a BOQ
-                             matching, match_report                                 BOQ wording to dataset components
-                             spec, validate_spec, spec_input, jsonschema_lite       the spec, its validator, the model input pack
-                             catalogue (dev check), make_base (one-off)
-scripts/spike/               reference-only first spike; hard-coded paths; not part of the runtime
+                             xlsx_reader, import_dataset, components, purdue, cables   the dataset and the rule tables
+                             matching, quantity                                     naming a component; quantities to items
+                             spec, validate_spec, jsonschema_lite                   the spec and its validator
+                             build_diagram (dev_preview)                            spec -> .vsdx
 data/                        components.json + icons/ (imported dataset), purdue_map.json, cable_types.json,
-                             aliases.json (confirmed BOQ wording; empty), boq_rules.json (classification), spec_schema.json, spec_rules.json,
-                             footer_form.json
+                             spec_schema.json, spec_rules.json, footer_form.json
 base/                        avanceon_logo.png, base.vsdx (empty A3 page on a Visio-made package skeleton)
-samples/                     spec_kemari.json, spec_korangi.json (worked examples of a correct spec)
+samples/                     spec_example.json (a correct spec, with its prompt)
 tests/  docs/
 ```
 
 ## Try it
-Run the tests (the file-writer tests need any Visio-made `.vsdx` as a skeleton):
+Run the tests:
 
 ```
-set ARCH_BASE_VSDX=base\base.vsdx
 python -m unittest discover -s tests -v
 ```
 
-Import the dataset again, check a BOQ against it, or draw the one-page catalogue (files go to `Downloads\out`):
+Check and draw the example (files go to `Downloads\out`):
+
+```
+python scripts\validate_spec.py samples\spec_example.json
+python scripts\build_diagram.py samples\spec_example.json --preview
+```
+
+Import the dataset again, or make a footer-only page:
 
 ```
 python scripts\import_dataset.py <system_architecture_dataset.xlsx>
-python scripts\match_report.py <boq.xlsx> --sheet "BOQ Foreign" --sheet "PLC F&G"
-python scripts\catalogue.py
-python scripts\boq_report.py <boq.xlsx> --list
-python scripts\boq_report.py <boq.xlsx> --sheet "BOQ Foreign" --sheet "PLC F&G"
-python scripts\spec_input.py <boq.xlsx> --sheet "BOQ Foreign" --prompt "..."
-python scripts\validate_spec.py samples\spec_korangi.json --boq <Korangi BOQ.xlsx>
-```
-
-Make a footer-only page:
-
-```
 python scripts\footer.py --print-form
 python scripts\footer.py --form filled_form.txt --base base\base.vsdx
 ```
-
-Load the plugin in Claude Code for testing, then run `/arch:arch`:
-
-```
-claude --plugin-dir "<path to this folder>"
-claude plugin validate "<path to this folder>"
-```
-
-Nothing produced here has been confirmed to open in real Visio yet (open question Q17).

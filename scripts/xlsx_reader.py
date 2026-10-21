@@ -100,17 +100,28 @@ def drawing_pictures(path, name):
     with zipfile.ZipFile(path) as z:
         part = _sheet_part(z, name)
         root = ET.fromstring(z.read(part))
-        drawing = root.find(_M + "drawing")
-        if drawing is None:
-            return []
-        dpart = _rels(z, part)[drawing.get(_R + "id")]
-        drels = _rels(z, dpart)
+        drawing, legacy = root.find(_M + "drawing"), root.find(_M + "legacyDrawing")
         default, heights = sheet_geometry(path, name)
         top_of, y = {}, 0.0
         for r in range(1, max(heights) + 3):
             top_of[r] = y
             y += heights.get(r, default)
         out = []
+        if legacy is not None:                       # old-style (VML) pictures, e.g. vector .emf symbols pasted into Excel
+            vpart = _rels(z, part)[legacy.get(_R + "id")]
+            vrels = _rels(z, vpart)
+            vml = z.read(vpart).decode("utf-8", "replace")
+            for i, m in enumerate(re.finditer(r"<v:shape\s.*?</v:shape>", vml, re.S)):
+                rid, anchor = re.search(r'o:relid="([^"]+)"', m.group(0)), re.search(r"<x:Anchor>([^<]+)</x:Anchor>", m.group(0))
+                if not (rid and anchor and rid.group(1) in vrels):
+                    continue
+                lc, _, tr, to, _, _, br, bo = [int(v) for v in anchor.group(1).split(",")]
+                out.append({"media": vrels[rid.group(1)], "order": 1000 + i, "top_pt": top_of[tr + 1] + to * 0.75,
+                            "bottom_pt": top_of[br + 1] + bo * 0.75, "col": lc})
+        if drawing is None:
+            return out
+        dpart = _rels(z, part)[drawing.get(_R + "id")]
+        drels = _rels(z, dpart)
         for i, anc in enumerate(ET.fromstring(z.read(dpart))):
             pic = anc.find(_XDR + "pic")
             if pic is None:

@@ -7,7 +7,8 @@ instructions). Everything else is free-form (decision D43).
 
 ## Layout
 ```
-chatgpt-plugin/   instructions.md (paste into ChatGPT), make_package.py (builds arch_plugin.zip to upload), README
+chatgpt-plugin/   instructions.md (paste into ChatGPT), make_package.py (builds arch_plugin.zip; also rewrites the Claude skill), README
+.claude-plugin/   Claude plugin + marketplace manifests;  skills/architecture-diagram/SKILL.md (generated from instructions.md)
 scripts/          Python standard library only:
                   build_diagram.py   diagram.json -> .vsdx (the one command ChatGPT runs)
                   vsdx_writer, footer, footer_form, textfit, draw, cables, components   writing the page
@@ -16,7 +17,7 @@ scripts/          Python standard library only:
 data/             cable_types.json, footer_form.json, components.json + icons/ (library pictures)
 base/             avanceon_logo.png, base.vsdx (empty A3 page on a Visio-made package skeleton)
 samples/          diagram_example.json
-docs/             diagram-format.md (the JSON format), decisions.md, dataset-import-report.md
+docs/             setup.md (ChatGPT and Claude setup), diagram-format.md (the JSON format), decisions.md, dataset-import-report.md
 tests/
 ```
 

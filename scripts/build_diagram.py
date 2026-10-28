@@ -1,387 +1,308 @@
-"""Build the A3 Visio file from a spec that passes the validator.   Standard library only.
+"""Draw a free-form diagram file as one editable A3 Visio page.   Standard library only.
 
-    python scripts/build_diagram.py spec.json [--out diagram.vsdx] [--preview]
+    python scripts/build_diagram.py diagram.json [--out Architecture.vsdx] [--preview]
 
-Steps: validate -> one band per Purdue level (highest at the top) -> items placed in rows (picture or box, one per unit or one
-"x N" item, as the spec's quantity mode says) -> connections routed square through the gaps between bands, in the cable's colour
--> geometric checks -> footer (title block, short notes, legend) -> .vsdx. Nothing is placed by the language model; nothing that is
-not in the spec is drawn. Connections drawn here are exactly those of the spec; ones marked 'assumed' are counted in the notes.
+The file lists shapes (position and size in inches, from the top-left corner of the drawing area above the footer) and lines
+between them. The program fixes only two things, so they are the same for every diagram the team makes: the footer (title block,
+notes, legend) and the cable colours, which come from data/cable_types.json by cable name. Everything else is drawn as written.
+Problems that can be repaired (a shape off the page, a missing picture, a label too long for its box) are repaired and reported as
+warnings; the build stops only when a line names an unknown shape or cable type, or the file is not usable at all.
 """
 import argparse
+import json
+import math
 import os
+import re
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import footer
-import quantity
-import spec as S
-from cables import Cables
+from cables import CableError, Cables
 from components import Components
-from draw import BOX_FILL, BOX_LINE, BOX_SIZES, LABEL_SIZES, LABEL_ZONE, draw_component
-from purdue import PurdueMap
+from draw import BOX_FILL, BOX_LINE, BOX_SIZES, draw_picture
 from textfit import TextFitError, fit_size
-from vsdx_writer import A3_H, A3_W, Page, write_vsdx
+from vsdx_writer import A3_H, A3_W, FONT_FLOOR, Page, png_size, write_vsdx
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-MARGIN, STRIP = footer.X0, 1.05                  # page margin; width of the level-name strip left of each band
-PAD, GAP, ROW_GAP, TOP_LANE = 0.12, 0.12, 0.14, 0.30
-MIN_CHANNEL, MAX_CHANNEL = 0.40, 1.50           # space between bands for the connection lanes
-SCALES = (1.3, 1.15, 1.0, 0.85, 0.70)           # item size ladder: the first that fits the page wins (never below the font floor)
-PIC, BOX = (1.00, 0.95), (1.35, 0.55)
-PANEL_W = 2.10                                  # side panel for VM contents
-BAND_FILL, BAND_LINE = "#F7F9FC", "#9AA5B1"
+MARGIN = footer.X0
+TOP, BOTTOM = A3_H - MARGIN, footer.TOP + 0.12      # the drawing area runs between these page heights
+AREA_W, AREA_H = A3_W - 2 * MARGIN, TOP - BOTTOM
+DEFAULT_SIZE = {"box": (1.35, 0.55), "picture": (1.00, 0.95), "text": (1.50, 0.30)}
+ZONE_FILL, ZONE_LINE = "#F7F9FC", "#9AA5B1"
+HEX = re.compile(r"#[0-9A-Fa-f]{6}$")
 
 
 class BuildError(ValueError):
     pass
 
 
-# ---- items ----------------------------------------------------------------------------------------------------------------
-def make_items(spec, comps, purdue, srules):
-    """One entry per drawn item, in spec order: dict(dev, level, label, comp, mode, key, vm, qty, suffix)."""
-    items = []
-    opts = spec["options"]
-    for g in spec["groups"]:
-        for d in g["devices"]:
-            label = comps.get(d["component"])["label"] if d.get("component") else d["label"]
-            plan = quantity.plan(d["qty"], d.get("quantity_mode") or opts["quantity_mode"], opts.get("max_instances", quantity.DEFAULT_MAX_INSTANCES))
-            for suffix in plan["suffixes"]:
-                items.append(dict(dev=d["id"], level=g["level"], label=label + suffix, comp=d.get("component"),
-                                  mode=S.render_mode(d, g, comps, purdue, srules), key="prompt:" + d["quote"], vm=d.get("vm"),
-                                  qty=d["qty"], suffix=suffix))
-    return items
+def _num(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
 
 
-def item_size(it, scale):
-    """(w, h) of the cell: widened step by step until the label fits at or above the font floor."""
-    base, sizes, zone = (PIC, LABEL_SIZES, LABEL_ZONE) if it["mode"] == "picture" else (BOX, BOX_SIZES, None)
-    for k in (1.0, 1.25, 1.5, 2.0, 2.6):
-        w, h = base[0] * scale * k, base[1] * scale
+def as_png(path):
+    """The picture as a PNG path. Another raster format (WebP, JPEG, GIF...) is converted when Pillow is installed (ChatGPT's sandbox has it)."""
+    try:
+        png_size(path)
+        return path
+    except ValueError:
         try:
-            fit_size(it["label"], w, zone or h, sizes)
-            return w, h
-        except TextFitError:
+            from PIL import Image
+        except ImportError:
+            raise ValueError("%s is not a PNG and Pillow is not installed to convert it" % path)
+        out = os.path.join(tempfile.mkdtemp(), "converted.png")
+        Image.open(path).convert("RGBA").save(out)
+        return out
+
+
+# ---- reading the file -----------------------------------------------------------------------------------------------------
+def prepare(spec, comps, cables, spec_dir):
+    """Shapes and lines with every default filled in. Returns (shapes, lines, warnings); raises BuildError for what cannot be drawn."""
+    if not isinstance(spec, dict) or not isinstance(spec.get("shapes"), list) or not spec["shapes"]:
+        raise BuildError('the file must be a JSON object with a non-empty "shapes" list')
+    errors, warnings, shapes, ids = [], [], [], set()
+    for n, s in enumerate(spec["shapes"], 1):
+        if not isinstance(s, dict):
+            errors.append("shape %d: not an object" % n)
             continue
-    raise BuildError("the label %r is too long to fit an item at 6 pt" % it["label"])
+        sid = str(s.get("id", "")).strip()
+        where = "shape %r" % (sid or n)
+        if not sid or sid in ids:
+            errors.append("%s: every shape needs its own id" % where)
+            continue
+        ids.add(sid)
+        kind = s.get("kind", "box")
+        if kind not in ("box", "zone", "text"):
+            errors.append('%s: kind must be "box", "zone" or "text"' % where)
+            continue
+        label, pic, key, web = str(s.get("label", "")).strip(), None, "shape:" + sid, False
+        if s.get("component"):
+            try:
+                comp = comps.get(s["component"])
+            except KeyError:
+                errors.append("%s: component %r is not in the library" % (where, s["component"]))
+                continue
+            label, pic, key = label or comp["label"], comps.picture_path(s["component"]), "component:%s" % comp["id"]
+        elif s.get("image") and kind == "box":
+            path = str(s["image"])
+            path = path if os.path.isabs(path) else os.path.join(spec_dir, path)
+            try:
+                path = as_png(path)
+                png_size(path)
+                pic, web = path, True
+                key = "image:%s|%s" % (s.get("image_source", "unknown"), sid)
+            except (OSError, ValueError) as e:
+                warnings.append("%s: picture not usable (%s); drawn as a box" % (where, e))
+        x, y = _num(s.get("x")), _num(s.get("y"))
+        if x is None or y is None:
+            errors.append("%s: x and y (inches from the top-left of the drawing area) are required" % where)
+            continue
+        dw, dh = DEFAULT_SIZE["picture" if pic and kind == "box" else kind if kind != "zone" else "box"]
+        w, h = _num(s.get("w", dw if kind != "zone" else None)), _num(s.get("h", dh if kind != "zone" else None))
+        if w is None or h is None or w <= 0 or h <= 0:
+            errors.append("%s: w and h must be positive numbers%s" % (where, " (zones need them)" if kind == "zone" else ""))
+            continue
+        if w > AREA_W or h > AREA_H:
+            warnings.append("%s: larger than the drawing area (%.1f x %.1f in); reduced" % (where, AREA_W, AREA_H))
+            w, h = min(w, AREA_W), min(h, AREA_H)
+        cx, cy = min(max(x, 0.0), AREA_W - w), min(max(y, 0.0), AREA_H - h)
+        if abs(cx - x) > 0.005 or abs(cy - y) > 0.005:
+            warnings.append("%s: was outside the drawing area; moved inside" % where)
+        fill = s.get("fill")
+        if fill is not None and not (isinstance(fill, str) and HEX.match(fill)):
+            warnings.append("%s: fill must be #RRGGBB; ignored" % where)
+            fill = None
+        shapes.append(dict(id=sid, kind=kind, label=label, pic=pic, web=web, key=key, x=cx, y=cy, w=w, h=h, fill=fill,
+                           dashed=bool(s.get("dashed")), bold=bool(s.get("bold")), size=_num(s.get("size")), where=where))
+    lines = []
+    for n, c in enumerate(spec.get("lines", []), 1):
+        where = "line %d" % n
+        if not isinstance(c, dict):
+            errors.append("%s: not an object" % where)
+            continue
+        for end in ("from", "to"):
+            if str(c.get(end)) not in ids:
+                errors.append("%s: %s %r is not a shape id" % (where, end, c.get(end)))
+        try:
+            cables.get(c.get("cable"))
+        except CableError as e:
+            errors.append("%s: %s" % (where, e))
+        via = [(MARGIN + p[0], TOP - p[1]) for p in c.get("via", []) if isinstance(p, list) and len(p) == 2 and None not in map(_num, p)]
+        if len(via) != len(c.get("via", [])):
+            warnings.append("%s: some via points were not [x, y] numbers; ignored" % where)
+        lines.append(dict(a=str(c.get("from")), b=str(c.get("to")), cable=c.get("cable"), via=via, where=where))
+    if errors:
+        raise BuildError("\n  ".join(["cannot draw this file:"] + errors))
+    return shapes, lines, warnings
 
 
-def flow_rows(sizes, inner_w):
-    """Split items (by width) into rows no wider than inner_w; returns lists of indexes."""
-    rows, cur, used = [], [], 0.0
-    for i, (w, _) in enumerate(sizes):
-        if cur and used + GAP + w > inner_w:
-            rows.append(cur)
-            cur, used = [], 0.0
-        used += (GAP if cur else 0) + w
-        cur.append(i)
-    return rows + ([cur] if cur else [])
+# ---- geometry (page coordinates, inches, y up) ----------------------------------------------------------------------------
+def rect_of(s):
+    return MARGIN + s["x"], TOP - s["y"] - s["h"], s["w"], s["h"]
 
 
-def band_height(sizes, rows):
-    return TOP_LANE + sum(max(sizes[i][1] for i in r) for r in rows) + ROW_GAP * (len(rows) - 1) + PAD
-
-
-# ---- geometry helpers -----------------------------------------------------------------------------------------------------
-def rect_of(it):
-    return it["x"], it["y"], it["w"], it["h"]
-
-
-def seg_hits(p, q, r, inset=0.01):
+def edge_point(r, target):
+    """Midpoint of the side of rectangle r that faces `target`."""
     x, y, w, h = r
-    x0, x1, y0, y1 = x + inset, x + w - inset, y + inset, y + h - inset
-    sx0, sx1, sy0, sy1 = min(p[0], q[0]), max(p[0], q[0]), min(p[1], q[1]), max(p[1], q[1])
-    return sx1 > x0 and sx0 < x1 and sy1 > y0 and sy0 < y1
+    dx, dy = target[0] - (x + w / 2), target[1] - (y + h / 2)
+    if abs(dx) * h > abs(dy) * w:
+        return (x + w if dx > 0 else x, y + h / 2)
+    return (x + w / 2, y + h if dy > 0 else y)
 
 
-def overlap(a, b):
-    return a["x"] < b["x"] + b["w"] - 1e-6 and b["x"] < a["x"] + a["w"] - 1e-6 and a["y"] < b["y"] + b["h"] - 1e-6 and b["y"] < a["y"] + a["h"] - 1e-6
-
-
-def hits(pts, items, skip):
-    return sum(1 for p, q in zip(pts, pts[1:]) for it in items if it["id"] not in skip and seg_hits(p, q, rect_of(it)))
-
-
-def dedupe(pts):
-    out = []
-    for p in pts:
-        if not out or abs(out[-1][0] - p[0]) > 1e-6 or abs(out[-1][1] - p[1]) > 1e-6:
+def route(a, b, via):
+    """Plain straight or square-cornered line between two rectangles, through the `via` points if given."""
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    if via:
+        pts = [edge_point(a, via[0])] + list(via) + [edge_point(b, via[-1])]
+    else:
+        ox0, ox1, oy0, oy1 = max(ax, bx), min(ax + aw, bx + bw), max(ay, by), min(ay + ah, by + bh)
+        if ox1 - ox0 > 0.1:                                     # share a column: one vertical line
+            x = (ox0 + ox1) / 2
+            pts = [(x, ay), (x, by + bh)] if ay >= by else [(x, ay + ah), (x, by)]
+        elif oy1 - oy0 > 0.1:                                   # share a row: one horizontal line
+            y = (oy0 + oy1) / 2
+            pts = [(ax + aw, y), (bx, y)] if ax < bx else [(ax, y), (bx + bw, y)]
+        else:                                                   # elbow through the middle of the gap
+            acx, acy, bcx, bcy = ax + aw / 2, ay + ah / 2, bx + bw / 2, by + bh / 2
+            if abs(bcx - acx) >= abs(bcy - acy):
+                p, q = ((ax + aw, acy), (bx, bcy)) if bcx > acx else ((ax, acy), (bx + bw, bcy))
+                m = (p[0] + q[0]) / 2
+                pts = [p, (m, p[1]), (m, q[1]), q]
+            else:
+                p, q = ((acx, ay), (bcx, by + bh)) if bcy < acy else ((acx, ay + ah), (bcx, by))
+                m = (p[1] + q[1]) / 2
+                pts = [p, (p[0], m), (q[0], m), q]
+    out = [pts[0]]
+    for p in pts[1:]:
+        if abs(p[0] - out[-1][0]) > 1e-6 or abs(p[1] - out[-1][1]) > 1e-6:
             out.append(p)
     return out
 
 
-def route_between(a, b, lane, items):
-    """Square route from item a (upper) to item b (lower) through the lane y; first candidate that touches no other item wins.
-    Returns (points, crossings)."""
-    def exits(it, from_bottom):
-        cx, edge_y, cy = it["x"] + it["w"] / 2, (it["y"] if from_bottom else it["y"] + it["h"]), it["y"] + it["h"] / 2
-        out = [(cx, [(cx, edge_y)])]
-        for edge, gx in ((it["x"] + it["w"], it["x"] + it["w"] + 0.06), (it["x"], it["x"] - 0.06)):
-            out.append((gx, [(edge, cy), (gx, cy)]))
-        return out
-    best = None
-    for ax, a_pre in exits(a, True):
-        for bx, b_pre in exits(b, False):
-            pts = dedupe(a_pre + [(ax, lane), (bx, lane)] + b_pre[::-1])
-            c = hits(pts, items, {a["id"], b["id"]})
-            if best is None or c < best[1] or (c == best[1] and len(pts) < len(best[0])):
-                best = (pts, c)
-            if c == 0 and len(pts) <= 4:
-                return pts, 0
-    return best
+def crosses(pts, r, inset=0.03):
+    """True if a horizontal or vertical segment of the line passes through the inside of rectangle r."""
+    x, y, w, h = r
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        if abs(y1 - y2) < 1e-6 and y + inset < y1 < y + h - inset and min(x1, x2) < x + w - inset and max(x1, x2) > x + inset:
+            return True
+        if abs(x1 - x2) < 1e-6 and x + inset < x1 < x + w - inset and min(y1, y2) < y + h - inset and max(y1, y2) > y + inset:
+            return True
+    return False
 
 
-def route_same(a, b, top_y, items):
-    """Route between two items of one band: straight along a row, else over the top of the band."""
-    if a["x"] > b["x"]:
-        a, b = b, a
-    acy, bcy = a["y"] + a["h"] / 2, b["y"] + b["h"] / 2
-    cands = []
-    if abs(acy - bcy) < 0.05:
-        cands.append([(a["x"] + a["w"], acy), (b["x"], bcy)])
-    cands.append(dedupe([(a["x"] + a["w"] / 2, a["y"] + a["h"]), (a["x"] + a["w"] / 2, top_y), (b["x"] + b["w"] / 2, top_y), (b["x"] + b["w"] / 2, b["y"] + b["h"])]))
-    best = None
-    for pts in cands:
-        c = hits(pts, items, {a["id"], b["id"]})
-        if best is None or c < best[1]:
-            best = (pts, c)
-        if c == 0:
-            break
-    return best
+def overlapping(shapes):
+    pairs, boxes = [], [s for s in shapes if s["kind"] != "zone"]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            if min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]) > 0.02 and \
+               min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]) > 0.02:
+                pairs.append((a["id"], b["id"]))
+    return pairs
 
 
 # ---- drawing --------------------------------------------------------------------------------------------------------------
-def draw_item(page, comps, it):
-    x, y, w, h = rect_of(it)
-    if it["mode"] == "picture":
-        ids = draw_component(page, comps, it["comp"], x, y, w, h, suffix=it["suffix"], qty=int(it["qty"]))
-        for i in ids:
-            page.shapes[i - 1]["key"] = (page.shapes[i - 1]["key"] or "") + "|" + it["key"]
-        return ids
-    size = fit_size(it["label"], w, h, BOX_SIZES)
-    return [page.rect("icon", x, y, w, h, fill=BOX_FILL, line=BOX_LINE, lw=1.0 if it["vm"] else 0.75, pattern=2 if it["vm"] else 1,
-                      text=it["label"], size=size, key=it["key"])]
+def label_size(s, w, h, sizes, bold=False):
+    """The shape's own size if it gave one, else the largest that fits; the font floor (with a warning) when nothing fits."""
+    if s["size"]:
+        return max(s["size"], FONT_FLOOR), None
+    try:
+        return fit_size(s["label"], w, h, sizes, bold), None
+    except TextFitError:
+        return FONT_FLOOR, "%s: label may not fit its box; make it larger or shorter" % s["where"]
 
 
-def draw_line(page, cables, c, pts):
-    color, pattern = cables.line_style(c["cable"])
-    key = c["from"] + "->" + c["to"]
-    page.line(pts, color, pattern, lw=1.25, key=key)
-    if c.get("redundant"):
-        page.line([(x + 0.04, y - 0.04) for x, y in pts], color, pattern, lw=1.25, key=key + "|redundant")
+def draw_shape(page, s):
+    x, y, w, h = rect_of(s)
+    warn = None
+    if s["kind"] == "zone":
+        page.rect("zone", x, y, w, h, fill=s["fill"] or ZONE_FILL, line=ZONE_LINE, lw=1.0, pattern=2 if s["dashed"] else 1, key=s["key"])
+        if s["label"]:
+            size, warn = label_size(s, w - 0.1, 0.25, (9, 8, 7, 6.5, 6), True)
+            page.text(x + 0.05, y + h - 0.28, w - 0.1, 0.25, s["label"], size=size, bold=True, halign=0, valign=0)
+    elif s["kind"] == "text":
+        size, warn = label_size(s, w, h, BOX_SIZES, s["bold"])
+        page.text(x, y, w, h, s["label"], size=size, bold=s["bold"], key=s["key"])
+    elif s["pic"] and h > 0.4:
+        draw_picture(page, s["pic"], s["label"], x, y, w, h, s["key"], soft=True)
+    else:
+        size, warn = label_size(s, w, h, BOX_SIZES)
+        page.rect("icon", x, y, w, h, fill=s["fill"] or BOX_FILL, line=BOX_LINE, lw=0.75, pattern=2 if s["dashed"] else 1,
+                  text=s["label"], size=size, bold=s["bold"], key=s["key"])
+    return warn
 
 
-def footer_notes(spec, items, has_vm):
-    notes = ["Pictures are used only for components named in the dataset; every other item is a box with the wording of the prompt."]
-    assumed = sum(1 for c in spec.get("connections", []) if c["basis"] == "assumed")
-    if assumed:
-        notes.append("%d of %d connections are assumed (not stated by the user)." % (assumed, len(spec["connections"])))
-    if any(" x" in it["suffix"] for it in items):
-        notes.append("x N = quantity.")
-    if has_vm:
-        notes.append("Dashed box = virtual machine; contents are listed at the right.")
-    return notes
-
-
-# ---- layout ---------------------------------------------------------------------------------------------------------------
-def fit_to_page(items, levels, inner_w, avail):
-    """Largest size step at which every band fits the page. Sets item sizes; returns (scale, band heights)."""
-    for scale in SCALES:
-        for it in items:
-            it["w"], it["h"] = item_size(it, scale)
-        heights = {}
-        for lv in levels:
-            sizes = [(it["w"], it["h"]) for it in items if it["level"] == lv]
-            heights[lv] = band_height(sizes, flow_rows(sizes, inner_w))
-        if sum(heights.values()) + (len(levels) - 1) * MIN_CHANNEL <= avail:
-            return scale, heights
-    raise BuildError("the items do not fit on one A3 page at the smallest size; use quantity_mode 'count' or 'type' "
-                     "(collapsing is never done silently)")
-
-
-def place_items(spec, items, levels, heights, band_y, band_x, inner_w):
-    """Order devices inside each band by where their neighbours in the band above sit, then place the rows centred."""
-    placed_x = {}
-    for lv in levels:
-        mine = [it for it in items if it["level"] == lv]
-        devs = list(dict.fromkeys(it["dev"] for it in mine))
-        def centre(dv):
-            xs = [placed_x[o] for c in spec.get("connections", []) for o in ((c["to"],) if c["from"] == dv else (c["from"],) if c["to"] == dv else ())
-                  if o in placed_x]
-            return sum(xs) / len(xs) if xs else None
-        centres = {dv: centre(dv) for dv in devs}
-        if all(v is not None for v in centres.values()):
-            devs.sort(key=lambda dv: centres[dv])
-        order = [it for dv in devs for it in mine if it["dev"] == dv]
-        sizes = [(it["w"], it["h"]) for it in order]
-        y = band_y[lv] + heights[lv] - TOP_LANE
-        for r in flow_rows(sizes, inner_w):
-            rh = max(sizes[i][1] for i in r)
-            x = band_x + PAD + (inner_w - sum(sizes[i][0] for i in r) - GAP * (len(r) - 1)) / 2
-            for i in r:
-                order[i]["x"], order[i]["y"] = x, y - rh + (rh - order[i]["h"]) / 2
-                x += order[i]["w"] + GAP
-            y -= rh + ROW_GAP
-        for dv in devs:
-            xs = [it["x"] + it["w"] / 2 for it in mine if it["dev"] == dv]
-            placed_x[dv] = sum(xs) / len(xs)
-
-
-def draw_bands(page, spec, levels, heights, band_y, band_x, band_w):
-    titles = {}
-    for g in spec["groups"]:
-        titles.setdefault(g["level"], []).append(g["title"])
-    for lv in levels:
-        page.rect("band", band_x, band_y[lv], band_w, heights[lv], fill=BAND_FILL, line=BAND_LINE, lw=0.75)
-        label = "Level %s\n%s" % (lv, " / ".join(titles[lv]))
-        page.text(MARGIN, band_y[lv], STRIP, heights[lv], label, size=fit_size(label, STRIP - 0.06, heights[lv], (8, 7, 6.5, 6), bold=True), bold=True)
-
-
-def draw_connections(page, cables, spec, items, by_dev, band_y, heights):
-    """Draw every connection of the spec. Links leaving one item in one cable share a lane (a bus). Returns warnings."""
-    level_of = {it["dev"]: it["level"] for it in items}
-    jobs = []                                                    # (connection, upper item, lower item, shared end)
-    for c in spec.get("connections", []):
-        A, B = by_dev[c["from"]], by_dev[c["to"]]
-        small, big = (A, B) if len(A) <= len(B) else (B, A)
-        for x in big:
-            near = min(small, key=lambda s: abs(s["x"] + s["w"] / 2 - x["x"] - x["w"] / 2))
-            a, b = (near, x) if big is B else (x, near)
-            if float(level_of[a["dev"]]) < float(level_of[b["dev"]]):
-                a, b = b, a
-            jobs.append((c, a, b, near))
-    by_channel = {}
-    for job in jobs:
-        by_channel.setdefault((job[1]["level"], job[2]["level"]), []).append(job)
-    warnings = []
-    for (la, lb), js in by_channel.items():
-        js.sort(key=lambda j: (j[3]["x"], j[0]["cable"], j[1]["x"] + j[2]["x"]))
-        if la == lb:
-            step = min(0.05, (TOP_LANE - 0.1) / len(js))
-            for k, (c, a, b, _) in enumerate(js):
-                pts, crossed = route_same(a, b, band_y[la] + heights[la] - 0.06 - k * step, items)
-                if crossed:
-                    warnings.append("connection %s -> %s passes through %d other item(s)" % (c["from"], c["to"], crossed))
-                draw_line(page, cables, c, pts)
-            continue
-        top, bottom = band_y[la], band_y[lb] + heights[lb]
-        bus = lambda j: ((j[1] if j[1]["dev"] == j[0]["from"] else j[2])["id"], j[0]["cable"])
-        lanes = list(dict.fromkeys(bus(j) for j in js))
-        for job in js:
-            c, a, b, _ = job
-            pts, crossed = route_between(a, b, top - (lanes.index(bus(job)) + 1) * (top - bottom) / (len(lanes) + 1), items)
-            if crossed:
-                warnings.append("connection %s -> %s passes through %d other item(s)" % (c["from"], c["to"], crossed))
-            draw_line(page, cables, c, pts)
-    return warnings, len(jobs)
-
-
-def draw_rings(page, cables, spec, by_dev):
-    for r in spec.get("rings", []):
-        members = [it for dv in r["members"] for it in by_dev[dv]]
-        x0, y0 = min(m["x"] for m in members) - 0.08, min(m["y"] for m in members) - 0.08
-        x1, y1 = max(m["x"] + m["w"] for m in members) + 0.08, max(m["y"] + m["h"] for m in members) + 0.08
-        color, pattern = cables.line_style(r["cable"])
-        page.line([(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)], color, pattern, lw=1.5, key="ring:" + r["id"])
-
-
-def draw_vm_panel(page, vms, y_top):
-    """Side panel listing what runs inside each VM. Returns the y of its lowest edge."""
-    px, py = A3_W - MARGIN - PANEL_W, y_top
-    for it in vms:
-        box_h = 0.30 + 0.38 * len(it["vm"]["contents"]) + 0.10
-        py -= box_h
-        page.rect("band", px, py, PANEL_W, box_h, fill=BAND_FILL, line=BAND_LINE, lw=0.75)
-        title = "%s: contents" % it["label"]
-        page.text(px, py + box_h - 0.30, PANEL_W, 0.28, title, size=fit_size(title, PANEL_W - 0.06, 0.28, (7, 6.5, 6), bold=True), bold=True)
-        for n, text in enumerate(it["vm"]["contents"]):
-            page.rect("icon", px + 0.10, py + box_h - 0.30 - 0.38 * (n + 1), PANEL_W - 0.20, 0.32, fill=BOX_FILL, line=BOX_LINE,
-                      text=text, size=fit_size(text, PANEL_W - 0.20, 0.32, BOX_SIZES), key="vm:" + it["dev"])
-        py -= 0.15
-    return py
-
-
-def geometric_problems(items, y_bottom, y_top):
-    problems = []
-    for it in items:
-        x, y, w, h = rect_of(it)
-        if x < MARGIN - 1e-6 or x + w > A3_W - MARGIN + 1e-6 or y < y_bottom - 0.12 or y + h > y_top + 1e-6:
-            problems.append("%s is outside the drawing area" % it["label"])
-    problems += ["%s overlaps %s" % (a["label"], b["label"]) for i, a in enumerate(items) for b in items[i + 1:] if overlap(a, b)]
-    return problems
-
-
-# ---- build ----------------------------------------------------------------------------------------------------------------
-def build(spec, base, out, comps=None):
-    """Validate `spec`, draw it and write `out` (.vsdx). Returns a summary dict (with the Page under 'page')."""
-    comps, purdue, cables = comps or Components(), PurdueMap(), Cables()
-    srules = S.load_json(S.RULES_PATH)
-    report = S.validate(spec, comps=comps, purdue=purdue, cables=cables, srules=srules)
-    if not report.ok:
-        raise BuildError("the spec does not pass the validator:\n" + report.text())
-    items = make_items(spec, comps, purdue, srules)
-    for n, it in enumerate(items, 1):
-        it["id"] = n
-    by_dev = {}
-    for it in items:
-        by_dev.setdefault(it["dev"], []).append(it)
-    levels = sorted({it["level"] for it in items}, key=float, reverse=True)       # top band first
-    vms = [it for it in items if it["vm"]]
-
+def build(spec, base, out, comps=None, cables=None, spec_dir="."):
+    comps, cables = comps or Components(), cables or Cables()
+    shapes, lines, warnings = prepare(spec, comps, cables, spec_dir)
+    by_id = {s["id"]: s for s in shapes}
     page = Page()
-    used_cables = sorted({c["cable"] for c in spec.get("connections", [])} | {r["cable"] for r in spec.get("rings", [])})
-    notes = footer_notes(spec, items, bool(vms))
-    info = footer.build_footer(page, spec["project"], cables.legend(used_cables), notes, spec["options"].get("allow_tbc", False))
-    y_top, y_bottom = A3_H - MARGIN, info["top"] + 0.12
-    band_x = MARGIN + STRIP + 0.05
-    band_w = A3_W - MARGIN - band_x - (PANEL_W + 0.10 if vms else 0.0)
-    inner_w = band_w - 2 * PAD
+    notes = [str(n) for n in spec.get("notes", [])]
+    n_web = sum(1 for s in shapes if s["web"])
+    if n_web:
+        notes.append("%d picture(s) come from outside the component library; the source is in the shape data." % n_web)
+    missing = [k for k in footer.REQUIRED if not str(spec.get("project", {}).get(k, "")).strip()]
+    if missing:
+        warnings.append("footer values printing TBC: %s; if the engineer or the documents gave any of them, add them to \"project\"" % ", ".join(missing))
+    used = sorted({c["cable"] for c in lines})
+    try:
+        footer.build_footer(page, spec.get("project", {}), cables.legend(used), notes, allow_tbc=True)
+    except footer.FooterError as e:
+        raise BuildError("footer: %s" % e)
 
-    scale, heights = fit_to_page(items, levels, inner_w, y_top - y_bottom)
-    spare = y_top - y_bottom - sum(heights.values())
-    gap = min(MAX_CHANNEL, spare / (len(levels) - 1)) if len(levels) > 1 else 0
-    cursor = y_top - max(0.0, (spare - gap * (len(levels) - 1)) / 2)                # centre the stack of bands
-    band_y = {}
-    for lv in levels:
-        cursor -= heights[lv]
-        band_y[lv] = cursor
-        cursor -= gap
+    for s in (s for s in shapes if s["kind"] == "zone"):                  # zones behind, then lines, then everything else on top
+        w = draw_shape(page, s)
+        if w:
+            warnings.append(w)
+    n_lines = 0
+    for c in lines:
+        pts = route(rect_of(by_id[c["a"]]), rect_of(by_id[c["b"]]), c["via"])
+        color, pattern = cables.line_style(c["cable"])
+        page.line(pts, color, pattern, lw=1.25, key="%s->%s" % (c["a"], c["b"]))
+        n_lines += 1
+        for s in shapes:
+            if s["kind"] != "zone" and s["id"] not in (c["a"], c["b"]) and crosses(pts, rect_of(s)):
+                warnings.append("%s (%s to %s) passes through shape %r; add a \"via\" point to route round it" % (c["where"], c["a"], c["b"], s["id"]))
+    for s in (s for s in shapes if s["kind"] != "zone"):
+        w = draw_shape(page, s)
+        if w:
+            warnings.append(w)
+    warnings += ["shapes %r and %r overlap" % p for p in overlapping(shapes)]
+    write_vsdx(page, out, base, title=str(spec.get("project", {}).get("project", "Architecture")))
+    return {"out": out, "shapes": len(shapes), "lines": n_lines, "warnings": warnings, "notes": notes, "page": page}
 
-    place_items(spec, items, levels, heights, band_y, band_x, inner_w)
-    draw_bands(page, spec, levels, heights, band_y, band_x, band_w)
-    warnings, n_lines = draw_connections(page, cables, spec, items, by_dev, band_y, heights)      # lines first, items on top
-    draw_rings(page, cables, spec, by_dev)
-    for it in items:
-        draw_item(page, comps, it)
-    problems = geometric_problems(items, y_bottom, y_top)
-    if vms and draw_vm_panel(page, vms, y_top) < y_bottom:
-        problems.append("the VM contents panel does not fit above the footer")
-    if problems:
-        raise BuildError("geometric check failed:\n  " + "\n  ".join(problems))
-    write_vsdx(page, out, base, title=spec["project"].get("project", "Architecture"))
-    return {"out": out, "items": len(items), "devices": len(by_dev), "bands": len(levels), "scale": scale, "connections": n_lines,
-            "warnings": warnings, "notes": notes, "validator_notes": report.notes, "validator_warnings": report.warnings, "page": page}
+
+def load_json(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as e:
+        raise BuildError("cannot read %s: %s" % (path, e))
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("spec")
     ap.add_argument("--base", default=os.path.join(ROOT, "base", "base.vsdx"))
-    ap.add_argument("--out", help="output .vsdx (default: Downloads\\out\\<spec name>.vsdx)")
+    ap.add_argument("--out", help="output .vsdx (default: Downloads\\out\\<file name>.vsdx)")
     ap.add_argument("--preview", action="store_true", help="also write a PNG preview next to the file (needs Pillow; development aid)")
     a = ap.parse_args()
     out = a.out or os.path.join(os.path.expanduser("~"), "Downloads", "out", os.path.splitext(os.path.basename(a.spec))[0] + ".vsdx")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     try:
-        r = build(S.load_json(a.spec), a.base, out)
+        r = build(load_json(a.spec), a.base, out, spec_dir=os.path.dirname(os.path.abspath(a.spec)))
     except BuildError as e:
         print("NOT BUILT: %s" % e)
         sys.exit(1)
-    print("built %s: %d items from %d devices in %d bands (size step %.2f), %d connection lines" % (
-        r["out"], r["items"], r["devices"], r["bands"], r["scale"], r["connections"]))
-    for w in r["warnings"] + ["validator: %s [%s] %s" % (w["code"], w["where"], w["message"][:140]) for w in r["validator_warnings"]]:
+    print("built %s: %d shapes, %d lines" % (r["out"], r["shapes"], r["lines"]))
+    for w in r["warnings"]:
         print("  warning:", w)
-    for n in r["notes"]:
-        print("  footer note:", n)
     if a.preview:
         import dev_preview
         png = os.path.splitext(out)[0] + "_preview.png"

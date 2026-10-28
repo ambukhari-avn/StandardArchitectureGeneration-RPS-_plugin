@@ -1,52 +1,28 @@
-# Architecture diagram generator (ChatGPT plugin, in progress)
+# Architecture diagram generator (ChatGPT plugin)
 
-Generates a one-page A3 Purdue-model architecture diagram as an editable Visio `.vsdx` from the user's prompt.
-The user writes only a prompt. The model asks questions until nothing is unclear, then writes a structured spec; fixed, tested
-code validates the spec, lays it out and writes the file. No model draws, positions or spells anything, and nothing is drawn that
-the user did not say.
-
-**Inputs:** the user's prompt (the only project input; no BOQ), `system_architecture_dataset.xlsx` (the component library and the
-only source of pictures), and the client's drawing instructions. **Platform:** ChatGPT (decision D26).
-
-**Status:** the drawing core is built and tested: footer, `.vsdx` writer, dataset import (including the vector symbols), Purdue map,
-cable table, picture/box drawing, exact component matching, quantity rules, the spec format and validator, and the diagram builder.
-Not built yet: the ChatGPT packaging (Phase 6) and the evaluation on real prompts (Phase 7). Nothing has been confirmed to open in
-real Visio beyond a first check (open question Q17). See `docs/`.
+Turns an engineer's prompt (optionally with an RFQ or BOQ attached) into an editable one-page A3 Visio `.vsdx`.
+ChatGPT designs the diagram and writes a small JSON file; fixed code draws it. Only two things are fixed, so they are the same for
+every diagram the team makes: the **footer** (title block, notes, legend) and the **cable colours** (from the client's drawing
+instructions). Everything else is free-form (decision D43).
 
 ## Layout
 ```
-chatgpt-plugin/              what is assembled for ChatGPT: instructions.md (the model's instructions) and a README
-scripts/                     Python standard library only (dev_preview needs Pillow and is a development aid):
-                             vsdx_writer, footer, footer_form, textfit, draw        writing the page
-                             xlsx_reader, import_dataset, components, purdue, cables   the dataset and the rule tables
-                             matching, quantity                                     naming a component; quantities to items
-                             spec, validate_spec, jsonschema_lite                   the spec and its validator
-                             build_diagram (dev_preview)                            spec -> .vsdx
-data/                        components.json + icons/ (imported dataset), purdue_map.json, cable_types.json,
-                             spec_schema.json, spec_rules.json, footer_form.json
-base/                        avanceon_logo.png, base.vsdx (empty A3 page on a Visio-made package skeleton)
-samples/                     spec_example.json (a correct spec, with its prompt)
-tests/  docs/
+chatgpt-plugin/   instructions.md (paste into ChatGPT), make_package.py (builds arch_plugin.zip to upload), README
+scripts/          Python standard library only:
+                  build_diagram.py   diagram.json -> .vsdx (the one command ChatGPT runs)
+                  vsdx_writer, footer, footer_form, textfit, draw, cables, components   writing the page
+                  import_dataset, xlsx_reader   refresh the component library from the dataset workbook (development)
+                  dev_preview       PNG preview, needs Pillow (development)
+data/             cable_types.json, footer_form.json, components.json + icons/ (library pictures)
+base/             avanceon_logo.png, base.vsdx (empty A3 page on a Visio-made package skeleton)
+samples/          diagram_example.json
+docs/             diagram-format.md (the JSON format), decisions.md, dataset-import-report.md
+tests/
 ```
 
 ## Try it
-Run the tests:
-
 ```
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests
+python scripts\build_diagram.py samples\diagram_example.json --preview
 ```
-
-Check and draw the example (files go to `Downloads\out`):
-
-```
-python scripts\validate_spec.py samples\spec_example.json
-python scripts\build_diagram.py samples\spec_example.json --preview
-```
-
-Import the dataset again, or make a footer-only page:
-
-```
-python scripts\import_dataset.py <system_architecture_dataset.xlsx>
-python scripts\footer.py --print-form
-python scripts\footer.py --form filled_form.txt --base base\base.vsdx
-```
+Output goes to `Downloads\out`. To make the zip for ChatGPT: `python chatgpt-plugin\make_package.py`.
